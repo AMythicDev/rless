@@ -1,0 +1,25 @@
+[package]
+name = "rless"
+version = "0.0.1"
+edition = "2018"
+default-run = "rless"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/takashiidobe/rless"
+documentation = "https://docs.rs/rless"
+description = "A simple pager in rust"
+
+[dependencies]
+async-std = { version = "1.10.0", features = ["attributes"]}
+crossterm = "0.20.0"
+futures = "0.3.17"
+minus = { git = "https://github.com/arijit79/minus", features = ["async_std_lib", "search", "static_output"]}
+man = { version = "0.3.0", optional = true }
+
+[[bin]]
+name = "man"
+path = "src/build.rs"
+required-features = ["build_deps"]
+
+[features]
+build_deps = ["man"]
