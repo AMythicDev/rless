@@ -217,7 +217,13 @@ impl InputClassifier for CustomInputHandler {
                 }
             }
 
-            // Scroll up by half screen height.
+            // refresh with R
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers: KeyModifiers::SHIFT,
+            }) => Some(InputEvent::RestorePrompt),
+
+            // If you press Ctrl-u or u, scroll up half a screen.
             Event::Key(KeyEvent {
                 code: KeyCode::Char('u'),
                 modifiers,
@@ -227,7 +233,8 @@ impl InputClassifier for CustomInputHandler {
                     upper_mark.saturating_sub(half_screen),
                 ))
             }
-            // Scroll down by half screen height.
+
+            // If you press Ctrl-d or d, scroll down half a screen.
             Event::Key(KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers,
@@ -286,12 +293,14 @@ impl InputClassifier for CustomInputHandler {
             Event::Resize(cols, rows) => {
                 Some(InputEvent::UpdateTermArea(cols as usize, rows as usize))
             }
+
             // Switch line number display.
             Event::Key(KeyEvent {
                 code: KeyCode::Char('l'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(InputEvent::UpdateLineNumber(!ln)),
-            // Quit.
+
+            // Quit with Ctrl-c or q
             Event::Key(KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::NONE,
@@ -300,14 +309,20 @@ impl InputClassifier for CustomInputHandler {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
             }) => Some(InputEvent::Exit),
+
+            // Search forward with /
             Event::Key(KeyEvent {
                 code: KeyCode::Char('/'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(InputEvent::Search(SearchMode::Forward)),
+
+            // Search backward with /
             Event::Key(KeyEvent {
                 code: KeyCode::Char('?'),
                 modifiers: KeyModifiers::NONE,
             }) => Some(InputEvent::Search(SearchMode::Reverse)),
+
+            // Go to next match with n or previous match if searching in reverse
             Event::Key(KeyEvent {
                 code: KeyCode::Char('n'),
                 modifiers: KeyModifiers::NONE,
@@ -318,6 +333,8 @@ impl InputClassifier for CustomInputHandler {
                     Some(InputEvent::NextMatch)
                 }
             }
+
+            // Go to previous match with p or next match if searching in reverse
             Event::Key(KeyEvent {
                 code: KeyCode::Char('p'),
                 modifiers: KeyModifiers::NONE,
@@ -328,7 +345,10 @@ impl InputClassifier for CustomInputHandler {
                     Some(InputEvent::PrevMatch)
                 }
             }
+            // Otherwise disregard
             _ => None,
         }
     }
 }
+//
+//
