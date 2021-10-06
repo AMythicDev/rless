@@ -9,7 +9,7 @@ use minus::{
 };
 use std::env::args;
 
-pub static mut INPUTS: Vec<u8> = vec![];
+pub static mut INPUTS: Vec<usize> = vec![];
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub fn get_pager() -> Result<Pager, TermError> {
@@ -177,10 +177,12 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Up || code == KeyCode::Char('k') => {
-                let mut amount = 1;
+                let mut amount: usize = 1;
                 unsafe {
                     if !INPUTS.is_empty() {
-                        amount = INPUTS.iter().fold(0, |acc, elem| acc * 10 + elem);
+                        amount = INPUTS
+                            .iter()
+                            .fold(0, |acc, elem| acc.saturating_mul(10).saturating_add(*elem));
                         INPUTS.clear();
                     }
                 }
@@ -194,10 +196,12 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Down || code == KeyCode::Char('j') => {
-                let mut amount = 1;
+                let mut amount: usize = 1;
                 unsafe {
                     if !INPUTS.is_empty() {
-                        amount = INPUTS.iter().fold(0, |acc, elem| acc * 10 + elem);
+                        amount = INPUTS
+                            .iter()
+                            .fold(0, |acc, elem| acc.saturating_mul(10).saturating_add(*elem));
                         INPUTS.clear();
                     }
                 }
