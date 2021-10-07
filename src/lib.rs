@@ -8,6 +8,9 @@ use minus::{
     LineNumbers, Pager, SearchMode,
 };
 use std::env::args;
+use syntect::highlighting::Style;
+use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use syntect::{easy::HighlightLines, parsing::SyntaxSet};
 
 pub static mut INPUTS: Vec<usize> = vec![];
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -37,6 +40,8 @@ pub fn arg_parser() -> Result<(String, Pager), TermError> {
 pub async fn read_file(
     name: String,
     pager: minus::PagerMutex,
+    highlighter: &mut HighlightLines<'_>,
+    ps: &SyntaxSet,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let file = async_std::fs::File::open(&name).await;
     if !file.is_ok() {
@@ -49,7 +54,14 @@ pub async fn read_file(
         let mut buf_reader = async_std::io::BufReader::new(file);
         buf_reader.read_to_string(&mut buf).await?;
         let mut guard = pager.lock().await;
-        guard.push_str(buf);
+
+        for line in LinesWithEndings::from(&buf) {
+            let ranges: Vec<(Style, &str)> = highlighter.highlight(line, &ps);
+            let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+            guard.push_str(&escaped);
+        }
+        // guard.push_str(&buf);
+
         std::io::Result::<_>::Ok(())
     };
 
