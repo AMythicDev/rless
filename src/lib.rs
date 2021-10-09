@@ -60,7 +60,6 @@ pub async fn read_file(
             let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
             guard.push_str(&escaped);
         }
-        // guard.push_str(&buf);
 
         std::io::Result::<_>::Ok(())
     };
@@ -71,7 +70,33 @@ pub async fn read_file(
     Ok(())
 }
 
-pub struct CustomInputHandler;
+pub struct CustomInputHandler {}
+
+type State = usize;
+
+pub static mut UNDO: Vec<State> = vec![];
+pub static mut REDO: Vec<State> = vec![];
+
+fn get_line_count() -> usize {
+    let mut amount: usize = 1;
+    unsafe {
+        if !INPUTS.is_empty() {
+            amount = INPUTS
+                .iter()
+                .fold(0, |acc, elem| acc.saturating_mul(10).saturating_add(*elem));
+            INPUTS.clear();
+        }
+    }
+    amount
+}
+
+fn process_input(start: usize, end: usize) -> Option<InputEvent> {
+    unsafe {
+        UNDO.push(start);
+    }
+
+    Some(InputEvent::UpdateUpperMark(end))
+}
 
 impl InputClassifier for CustomInputHandler {
     fn classify_input(
@@ -184,42 +209,56 @@ impl InputClassifier for CustomInputHandler {
                 None
             }
 
-            // Scroll up by one.
+            // Scroll up
             Event::Key(KeyEvent {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Up || code == KeyCode::Char('k') => {
-                let mut amount: usize = 1;
-                unsafe {
-                    if !INPUTS.is_empty() {
-                        amount = INPUTS
-                            .iter()
-                            .fold(0, |acc, elem| acc.saturating_mul(10).saturating_add(*elem));
-                        INPUTS.clear();
-                    }
-                }
-                Some(InputEvent::UpdateUpperMark(
-                    upper_mark.saturating_sub(amount.into()),
-                ))
+                let amount = get_line_count();
+                let end_state = upper_mark.saturating_sub(amount.into());
+                process_input(upper_mark, end_state)
             }
 
-            // Scroll down by one.
+            // Scroll down
             Event::Key(KeyEvent {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Down || code == KeyCode::Char('j') => {
-                let mut amount: usize = 1;
-                unsafe {
-                    if !INPUTS.is_empty() {
-                        amount = INPUTS
-                            .iter()
-                            .fold(0, |acc, elem| acc.saturating_mul(10).saturating_add(*elem));
-                        INPUTS.clear();
+                let amount = get_line_count();
+                let end_state = upper_mark.saturating_add(amount.into());
+                process_input(upper_mark, end_state)
+            }
+
+            // undo
+            Event::Key(KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+            }) if code == KeyCode::Char('u') => {
+                let undo_state = unsafe { UNDO.pop() };
+                if let Some(state) = undo_state {
+                    let end_state = state;
+                    unsafe {
+                        REDO.push(state);
                     }
+                    return Some(InputEvent::UpdateUpperMark(end_state));
                 }
-                Some(InputEvent::UpdateUpperMark(
-                    upper_mark.saturating_add(amount.into()),
-                ))
+                None
+            }
+
+            // redo
+            Event::Key(KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+            }) if code == KeyCode::Char('r') => {
+                let redo_state = unsafe { REDO.pop() };
+                if let Some(state) = redo_state {
+                    let end_state = state;
+                    unsafe {
+                        UNDO.push(state);
+                    }
+                    return Some(InputEvent::UpdateUpperMark(end_state));
+                }
+                None
             }
 
             Event::Key(KeyEvent {
@@ -229,15 +268,11 @@ impl InputClassifier for CustomInputHandler {
                 if message {
                     Some(InputEvent::RestorePrompt)
                 } else {
-                    Some(InputEvent::UpdateUpperMark(upper_mark.saturating_add(1)))
+                    let amount = get_line_count();
+                    let end_state = upper_mark.saturating_add(amount.into());
+                    process_input(upper_mark, end_state)
                 }
             }
-
-            // refresh with R
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('r'),
-                modifiers: KeyModifiers::SHIFT,
-            }) => Some(InputEvent::RestorePrompt),
 
             // If you press Ctrl-u or u, scroll up half a screen.
             Event::Key(KeyEvent {
@@ -245,9 +280,8 @@ impl InputClassifier for CustomInputHandler {
                 modifiers,
             }) if modifiers == KeyModifiers::CONTROL || modifiers == KeyModifiers::NONE => {
                 let half_screen = (rows / 2) as usize;
-                Some(InputEvent::UpdateUpperMark(
-                    upper_mark.saturating_sub(half_screen),
-                ))
+                let end_state = upper_mark.saturating_sub(half_screen);
+                process_input(upper_mark, end_state)
             }
 
             // If you press Ctrl-d or d, scroll down half a screen.
@@ -256,26 +290,26 @@ impl InputClassifier for CustomInputHandler {
                 modifiers,
             }) if modifiers == KeyModifiers::CONTROL || modifiers == KeyModifiers::NONE => {
                 let half_screen = (rows / 2) as usize;
-                Some(InputEvent::UpdateUpperMark(
-                    upper_mark.saturating_add(half_screen),
-                ))
+                let end_state = upper_mark.saturating_add(half_screen);
+                process_input(upper_mark, end_state)
             }
 
             // Mouse scroll up/down
             Event::Mouse(MouseEvent {
                 kind: MouseEventKind::ScrollUp,
                 ..
-            }) => Some(InputEvent::UpdateUpperMark(upper_mark.saturating_sub(5))),
+            }) => process_input(upper_mark, upper_mark.saturating_sub(5)),
+
             Event::Mouse(MouseEvent {
                 kind: MouseEventKind::ScrollDown,
                 ..
-            }) => Some(InputEvent::UpdateUpperMark(upper_mark.saturating_add(5))),
+            }) => process_input(upper_mark, upper_mark.saturating_add(5)),
 
             // Go to top.
             Event::Key(KeyEvent {
                 code: KeyCode::Char('g'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(InputEvent::UpdateUpperMark(0)),
+            }) => process_input(upper_mark, 0),
 
             // Go to bottom.
             Event::Key(KeyEvent {
@@ -289,21 +323,20 @@ impl InputClassifier for CustomInputHandler {
             | Event::Key(KeyEvent {
                 code: KeyCode::Char('G'),
                 modifiers: KeyModifiers::NONE,
-            }) => Some(InputEvent::UpdateUpperMark(usize::MAX)),
+            }) => process_input(upper_mark, usize::MAX),
 
             // Page Up/Down
             Event::Key(KeyEvent {
                 code: KeyCode::PageUp,
                 modifiers: KeyModifiers::NONE,
-            }) => Some(InputEvent::UpdateUpperMark(
-                upper_mark.saturating_sub(rows - 1),
-            )),
+            }) => process_input(upper_mark, upper_mark.saturating_sub(rows - 1)),
+
             Event::Key(KeyEvent {
                 code: c,
                 modifiers: KeyModifiers::NONE,
-            }) if c == KeyCode::PageDown || c == KeyCode::Char(' ') => Some(
-                InputEvent::UpdateUpperMark(upper_mark.saturating_add(rows - 1)),
-            ),
+            }) if c == KeyCode::PageDown || c == KeyCode::Char(' ') => {
+                process_input(upper_mark, upper_mark.saturating_add(rows - 1))
+            }
 
             // Resize event from the terminal.
             Event::Resize(cols, rows) => {
