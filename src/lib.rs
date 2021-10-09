@@ -19,6 +19,23 @@ pub fn get_pager() -> Result<Pager, TermError> {
     Pager::new()
 }
 
+use std::io::stdout;
+
+use crossterm::execute;
+use crossterm::style::{Color, SetBackgroundColor};
+
+pub fn set_prompt() -> crossterm::Result<()> {
+    execute!(
+        stdout(),
+        // set background
+        SetBackgroundColor(Color::Rgb {
+            r: 43,
+            g: 48,
+            b: 59
+        }),
+    )
+}
+
 pub fn arg_parser() -> Result<(String, Pager), TermError> {
     let arguments: Vec<String> = args().collect();
     if arguments.len() < 2 {
@@ -91,9 +108,7 @@ fn get_line_count() -> usize {
 }
 
 fn process_input(start: usize, end: usize) -> Option<InputEvent> {
-    unsafe {
-        UNDO.push(start);
-    }
+    unsafe { UNDO.push(start) }
 
     Some(InputEvent::UpdateUpperMark(end))
 }
@@ -113,9 +128,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('0') => {
-                unsafe {
-                    INPUTS.push(0);
-                }
+                unsafe { INPUTS.push(0) }
                 None
             }
 
@@ -123,9 +136,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('1') => {
-                unsafe {
-                    INPUTS.push(1);
-                }
+                unsafe { INPUTS.push(1) }
                 None
             }
 
@@ -133,9 +144,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('2') => {
-                unsafe {
-                    INPUTS.push(2);
-                }
+                unsafe { INPUTS.push(2) }
                 None
             }
 
@@ -143,9 +152,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('3') => {
-                unsafe {
-                    INPUTS.push(3);
-                }
+                unsafe { INPUTS.push(3) }
                 None
             }
 
@@ -153,9 +160,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('4') => {
-                unsafe {
-                    INPUTS.push(4);
-                }
+                unsafe { INPUTS.push(4) }
                 None
             }
 
@@ -163,9 +168,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('5') => {
-                unsafe {
-                    INPUTS.push(5);
-                }
+                unsafe { INPUTS.push(5) }
                 None
             }
 
@@ -173,9 +176,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('6') => {
-                unsafe {
-                    INPUTS.push(6);
-                }
+                unsafe { INPUTS.push(6) }
                 None
             }
 
@@ -183,9 +184,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('7') => {
-                unsafe {
-                    INPUTS.push(7);
-                }
+                unsafe { INPUTS.push(7) }
                 None
             }
 
@@ -193,9 +192,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('8') => {
-                unsafe {
-                    INPUTS.push(8);
-                }
+                unsafe { INPUTS.push(8) }
                 None
             }
 
@@ -203,9 +200,7 @@ impl InputClassifier for CustomInputHandler {
                 code,
                 modifiers: KeyModifiers::NONE,
             }) if code == KeyCode::Char('9') => {
-                unsafe {
-                    INPUTS.push(9);
-                }
+                unsafe { INPUTS.push(9) }
                 None
             }
 
@@ -237,9 +232,7 @@ impl InputClassifier for CustomInputHandler {
                 let undo_state = unsafe { UNDO.pop() };
                 if let Some(state) = undo_state {
                     let end_state = state;
-                    unsafe {
-                        REDO.push(state);
-                    }
+                    unsafe { REDO.push(state) }
                     return Some(InputEvent::UpdateUpperMark(end_state));
                 }
                 None
@@ -253,9 +246,7 @@ impl InputClassifier for CustomInputHandler {
                 let redo_state = unsafe { REDO.pop() };
                 if let Some(state) = redo_state {
                     let end_state = state;
-                    unsafe {
-                        UNDO.push(state);
-                    }
+                    unsafe { UNDO.push(state) }
                     return Some(InputEvent::UpdateUpperMark(end_state));
                 }
                 None
@@ -375,29 +366,23 @@ impl InputClassifier for CustomInputHandler {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('n'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                if search_mode == SearchMode::Reverse {
-                    Some(InputEvent::PrevMatch)
-                } else {
-                    Some(InputEvent::NextMatch)
-                }
-            }
+            }) => Some(if search_mode == SearchMode::Reverse {
+                InputEvent::PrevMatch
+            } else {
+                InputEvent::NextMatch
+            }),
 
             // Go to previous match with p or next match if searching in reverse
             Event::Key(KeyEvent {
                 code: KeyCode::Char('p'),
                 modifiers: KeyModifiers::NONE,
-            }) => {
-                if search_mode == SearchMode::Reverse {
-                    Some(InputEvent::NextMatch)
-                } else {
-                    Some(InputEvent::PrevMatch)
-                }
-            }
+            }) => Some(if search_mode == SearchMode::Reverse {
+                InputEvent::NextMatch
+            } else {
+                InputEvent::PrevMatch
+            }),
             // Otherwise disregard
             _ => None,
         }
     }
 }
-//
-//
