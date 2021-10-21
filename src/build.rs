@@ -9,6 +9,16 @@ fn main() -> Result<(), Error> {
     let msg = Manual::new("rless")
         .about("A pager in rust.")
         .arg(Arg::new("path"))
+        .custom(Section::new("commands").paragraph(
+            r#"
+k      Up. Scroll up one line by default, otherwise, if a number is specified, scroll up N lines.
+
+j      Down. Scroll down one line by default, otherwise, if a number is specified, scroll down N lines.
+
+u      Undo. Go back to the location before the previous command.
+
+r      Redo. Apply the last command that was undone."#,
+        ))
         .example(
             Example::new()
                 .text("Running the program")
