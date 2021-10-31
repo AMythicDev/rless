@@ -1,39 +1,18 @@
-use async_std::io::prelude::*;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use futures::future::join;
 use minus::{
-    async_std_updating,
     error::TermError,
     input::{InputClassifier, InputEvent},
     LineNumbers, Pager, SearchMode,
 };
 use std::env::args;
-use syntect::highlighting::Style;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
-use syntect::{easy::HighlightLines, parsing::SyntaxSet};
+use std::path::Path;
 
 pub static mut INPUTS: Vec<usize> = vec![];
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub fn get_pager() -> Result<Pager, TermError> {
     Pager::new()
-}
-
-use std::io::stdout;
-
-use crossterm::execute;
-use crossterm::style::{Color, SetBackgroundColor};
-
-pub fn set_prompt() -> crossterm::Result<()> {
-    execute!(
-        stdout(),
-        // set background
-        SetBackgroundColor(Color::Rgb {
-            r: 43,
-            g: 48,
-            b: 59
-        }),
-    )
 }
 
 pub fn arg_parser() -> Result<(String, Pager), TermError> {
@@ -54,34 +33,25 @@ pub fn arg_parser() -> Result<(String, Pager), TermError> {
     Ok((filename, pager))
 }
 
+use async_std::fs::read_to_string;
+
 pub async fn read_file(
     name: String,
     pager: minus::PagerMutex,
-    highlighter: &mut HighlightLines<'_>,
-    ps: &SyntaxSet,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let file = async_std::fs::File::open(&name).await;
-    if !file.is_ok() {
-        eprintln!("'{}': No such file or directory (os error 2)", &name);
-        std::process::exit(1);
+    let file_path = Path::new(&name).exists();
+    if !file_path {
+        eprintln!("os error 2: {} does not exist.", &name);
+        std::process::exit(2);
     }
-    let file = file.unwrap();
+    let file_contents = read_to_string(&name).await?;
     let changes = async {
-        let mut buf = String::new();
-        let mut buf_reader = async_std::io::BufReader::new(file);
-        buf_reader.read_to_string(&mut buf).await?;
         let mut guard = pager.lock().await;
-
-        for line in LinesWithEndings::from(&buf) {
-            let ranges: Vec<(Style, &str)> = highlighter.highlight(line, &ps);
-            let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
-            guard.push_str(&escaped);
-        }
-
+        guard.push_str(file_contents);
         std::io::Result::<_>::Ok(())
     };
 
-    let (res1, res2) = join(async_std_updating(pager.clone()), changes).await;
+    let (res1, res2) = join(minus::async_std_updating(pager.clone()), changes).await;
     res1?;
     res2?;
     Ok(())
