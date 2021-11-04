@@ -1,6 +1,8 @@
+cargo-features = ["strip"]
+
 [package]
 name = "rless"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2018"
 default-run = "rless"
 readme = "README.md"
@@ -23,3 +25,7 @@ required-features = ["build_deps"]
 
 [features]
 build_deps = ["man"]
+
+[profile.release]
+strip = "symbols"
+

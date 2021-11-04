@@ -1,5 +1,5 @@
 # Taken from: https://github.com/sharkdp/hyperfine
-name: build
+name: release
 
 env:
   MIN_SUPPORTED_RUST_VERSION: "1.56.0"
@@ -69,8 +69,8 @@ jobs:
           - { target: s390x-unknown-linux-gnu	            , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
           - { target: x86_64-unknown-freebsd              , os: ubuntu-20.04, use-cross: true }
-          # TODO: illumos fails, needs -lsocket, -lposix4, -lumem
-          # - { target: x86_64-unknown-illumos              , os: ubuntu-20.04, use-cross: true }
+          # DONE: Compiles
+          - { target: x86_64-unknown-illumos              , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
           - { target: arm-unknown-linux-musleabihf        , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
@@ -183,11 +183,11 @@ jobs:
           # TODO: investigate
           # - { target: wasm32-wasi                         , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
-          - { target: x86_64-apple-ios                    , os: macos-10.15                   }
+          #- { target: x86_64-apple-ios                    , os: macos-10.15                   }
           # TODO: investigate
           # - { target: x86_64-fortanix-unknown-sgx         , os: ubuntu-20.04, use-cross: true }
           # TODO: investigate
-          # - { target: x86_64-fuchsia                      , os: ubuntu-20.04, use-cross: true }
+          # - { target: x86_64-fuchsia                      , os: ubuntu-20.04                  }
           # DONE: Compiles
           - { target: x86_64-linux-android                , os: ubuntu-20.04, use-cross: true }
           # TODO: missing -lsocket -lposix4 -lmem
@@ -333,8 +333,8 @@ jobs:
           # - { target: x86_64-apple-tvos                   , os: macos-10.15                   }
           # TODO: investigate
           # - { target: x86_64-pc-windows-msvc              , os: windows-2019                  }
-          # TODO: investigate
-          # - { target: x86_64-sun-solaris                  , os: ubuntu-20.04, use-cross: true }
+          # DONE: Compiles with no_std
+          - { target: x86_64-sun-solaris                  , os: ubuntu-20.04, use-cross: true }
           # TODO: investigate
           # - { target: x86_64-unknown-dragonfly            , os: ubuntu-20.04, use-cross: true }
           # TODO: investigate
@@ -372,15 +372,6 @@ jobs:
           i686-pc-windows-gnu) echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH ;;
           i686-pc-windows-msvc) echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH ;;
           i586-pc-windows-msvc) echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH ;;
-          x86_64-unknown-illumos) ;;
-          aarch64-unknown-none-softfloat) sudo apt-get -y update ; sudo apt-get -y install gcc-aarch64-unknown-none-softfloat ;;
-          aarch64-unknown-none) sudo apt-get -y update ; sudo apt-get -y install gcc-aarch64-unknown-none ;;
-          aarch64-fuchsia) sudo apt-get -y update ; sudo apt-get -y install gcc-aarch64-fuchsia ;;
-          armebv7r-none-eabi) sudo apt-get -y update ; sudo apt-get -y install gcc-armebv7r-none-eabi ;;
-          armebv7r-none-eabihf) sudo apt-get -y update ; sudo apt-get -y install gcc-armebv7r-none-eabihf ;;
-          armv7a-none-eabi) sudo apt-get -y update ; sudo apt-get -y install gcc-armv7a-none-eabi ;;
-          armv7r-none-eabi) sudo apt-get -y update ; sudo apt-get -y install gcc-armv7r-none-eabi ;;
-          armv7r-none-eabihf) sudo apt-get -y update ; sudo apt-get -y install gcc-armv7r-none-eabihf ;;
         esac
 
     - name: Extract crate information
@@ -392,12 +383,9 @@ jobs:
         echo "PROJECT_HOMEPAGE=$(sed -n 's/^homepage = "\(.*\)"/\1/p' Cargo.toml)" >> $GITHUB_ENV
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ matrix.job.target }}
-        override: true
-        profile: minimal # minimal component installation (ie, no documentation)
+      shell: bash
+      run: |
+        rustup target add ${{ matrix.job.target }}
 
     - name: Show version information (Rust, cargo, GCC)
       shell: bash
@@ -420,41 +408,10 @@ jobs:
         command: build
         args: --locked --release --target=${{ matrix.job.target }}
 
-    - name: Strip debug information from executable
-      id: strip
+    - name: Move binary to correct directory
+      id: mvbin
       shell: bash
       run: |
-        # Figure out suffix of binary
-        EXE_suffix=""
-        case ${{ matrix.job.target }} in
-          *-pc-windows-*) EXE_suffix=".exe" ;;
-        esac;
-
-        # Figure out what strip tool to use if any
-        STRIP="strip"
-        case ${{ matrix.job.target }} in
-          arm-unknown-linux-*) STRIP="arm-linux-gnueabihf-strip" ;;
-          aarch64-pc-*) STRIP="" ;;
-          aarch64-unknown-*) STRIP="" ;;
-          armv7-unknown-*) STRIP="" ;;
-          mips-unknown-*) STRIP="" ;;
-          mips64-unknown-*) STRIP="" ;;
-          mips64el-unknown-*) STRIP="" ;;
-          mipsel-unknown-*) STRIP="" ;;
-          powerpc-unknown-*) STRIP="" ;;
-          powerpc64-unknown-*) STRIP="" ;;
-          powerpc64le-unknown-*) STRIP="" ;;
-          riscv64gc-unknown-*) STRIP="" ;;
-          s390x-unknown-*) STRIP="" ;;
-          x86_64-unknown-freebsd) STRIP="" ;;
-          x86_64-unknown-illumos) STRIP="" ;;
-          aarch64-linux-android) STRIP="" ;;
-          arm-linux-androideabi) STRIP="" ;;
-          armv5te-unknown-linux-gnueabi) STRIP="" ;;
-          armv5te-unknown-linux-musleabi) STRIP="" ;;
-          armv7-linux-androideabi) STRIP="" ;;
-        esac;
-
         # Setup paths
         BIN_DIR="${{ env.CICD_INTERMEDIATES_DIR }}/stripped-release-bin/"
         mkdir -p "${BIN_DIR}"
@@ -464,11 +421,6 @@ jobs:
 
         # Copy the release build binary to the result location
         cp "target/$TRIPLET_NAME/release/${BIN_NAME}" "${BIN_DIR}"
-
-        # Also strip if possible
-        if [ -n "${STRIP}" ]; then
-          "${STRIP}" "${BIN_PATH}"
-        fi
 
         # Let subsequent steps know where to find the (stripped) bin
         echo ::set-output name=BIN_PATH::${BIN_PATH}
@@ -523,4 +475,3 @@ jobs:
           ${{ steps.package.outputs.PKG_PATH }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
