@@ -385,6 +385,7 @@ jobs:
     - name: Install Rust toolchain
       shell: bash
       run: |
+        rustup default nightly
         rustup target add ${{ matrix.job.target }}
 
     - name: Show version information (Rust, cargo, GCC)
