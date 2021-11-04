@@ -1,0 +1,14 @@
+[target.x86_64-unknown-freebsd]
+image = "rustembedded/cross:x86_64-unknown-freebsd"
+
+[target.powerpc64-unknown-linux-gnu]
+image = "rustembedded/cross:powerpc64-unknown-linux-gnu"
+
+[target.x86_64-unknown-illumos]
+image = "rustembedded/cross:x86_64-sun-solaris"
+
+[target.armv7-unknown-linux-gnueabi]
+image = "rustembedded/cross:armv7-unknown-linux-gnueabi"
+
+[target.armv7-unknown-linux-musleabi]
+image = "rustembedded/cross:armv7-unknown-linux-musleabi"

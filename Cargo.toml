@@ -1,6 +1,6 @@
 [package]
 name = "rless"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2018"
 default-run = "rless"
 readme = "README.md"
