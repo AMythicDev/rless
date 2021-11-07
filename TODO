@@ -1,1 +1,1 @@
-# Add color to terminal 
+# Check if output is a terminal. If so, show fancy output, otherwise, work like cat.

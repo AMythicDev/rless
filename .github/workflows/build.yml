@@ -70,7 +70,7 @@ jobs:
           # DONE: Compiles
           - { target: x86_64-unknown-freebsd              , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
-          - { target: x86_64-unknown-illumos              , os: ubuntu-20.04, use-cross: true }
+          # - { target: x86_64-unknown-illumos              , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
           - { target: arm-unknown-linux-musleabihf        , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
@@ -81,19 +81,19 @@ jobs:
           - { target: x86_64-unknown-netbsd               , os: ubuntu-20.04, use-cross: true }
           # Tier 2
           # DONE: Compiles
-          - { target: aarch64-apple-ios                   , os: macos-11                      }
+          # - { target: aarch64-apple-ios                   , os: macos-11                      }
           # DONE: Compiles
-          - { target: aarch64-apple-ios-sim               , os: macos-11                      }
+          # - { target: aarch64-apple-ios-sim               , os: macos-11                      }
           # TODO: needs cc
           # - { target: aarch64-fuchsia                     , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
-          - { target: aarch64-linux-android               , os: ubuntu-20.04, use-cross: true }
+          # - { target: aarch64-linux-android               , os: ubuntu-20.04, use-cross: true }
           # TODO: needs cc
           # - { target: aarch64-unknown-none-softfloat      , os: ubuntu-20.04, use-cross: true }
           # TODO: needs cc
           # - { target: aarch64-unknown-none                , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
-          - { target: arm-linux-androideabi               , os: ubuntu-20.04, use-cross: true }
+          # - { target: arm-linux-androideabi               , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
           - { target: arm-unknown-linux-musleabi          , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
@@ -107,7 +107,7 @@ jobs:
           # DONE: Compiles
           - { target: armv5te-unknown-linux-musleabi      , os: ubuntu-20.04, use-cross: true }
           # DONE: Compiles
-          - { target: armv7-linux-androideabi             , os: ubuntu-20.04, use-cross: true }
+          # - { target: armv7-linux-androideabi             , os: ubuntu-20.04, use-cross: true }
           # TODO: needs docker image for cross
           # - { target: armv7-unknown-linux-gnueabi         , os: ubuntu-20.04, use-cross: true }
           # TODO: needs docker image for cross
@@ -377,6 +377,7 @@ jobs:
         case ${{ matrix.job.target }} in
           arm-unknown-linux-*) sudo apt-get -y update ; sudo apt-get -y install gcc-arm-linux-gnueabihf ;;
           aarch64-unknown-linux-gnu) sudo apt-get -y update ; sudo apt-get -y install gcc-aarch64-linux-gnu ;;
+          aarch64-unknown-linux-musl) sudo apt-get -y update ; sudo apt-get -y install musl-dev ;;
           i686-pc-windows-gnu) echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH ;;
           i686-pc-windows-msvc) echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH ;;
           i586-pc-windows-msvc) echo "C:\msys64\mingw32\bin" >> $GITHUB_PATH ;;
@@ -390,11 +391,13 @@ jobs:
         echo "PROJECT_MAINTAINER=$(sed -n 's/^authors = \["\(.*\)"\]/\1/p' Cargo.toml)" >> $GITHUB_ENV
         echo "PROJECT_HOMEPAGE=$(sed -n 's/^homepage = "\(.*\)"/\1/p' Cargo.toml)" >> $GITHUB_ENV
 
+
     - name: Install Rust toolchain
-      shell: bash
-      run: |
-        rustup default nightly
-        rustup target add ${{ matrix.job.target }}
+      uses: actions-rs/toolchain@v1
+      with:
+        target: ${{ matrix.job.target }}
+        profile: minimal
+        toolchain: stable
 
     - name: Show version information (Rust, cargo, GCC)
       shell: bash
