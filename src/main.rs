@@ -1,10 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    convert::{TryFrom, TryInto},
-    path::PathBuf,
-    sync::Arc,
-    vec::IntoIter,
-};
+use std::{collections::BTreeMap, convert::TryInto, path::PathBuf, sync::Arc, vec::IntoIter};
 
 use clap::Parser;
 use minus::{MinusError, Pager};
@@ -82,6 +76,9 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
     let file = File::open(&first_filename).await?;
     let mut bufreader = BufReader::new(file);
 
+    // Read the entire file if bufsize is -1 as the user explicitly asked for unlimited memory space
+    // Otherwise read only `bufsize` amount of data from file and keep the rest for reading later
+    #[allow(clippy::unused_io_amount)]
     if bufsize == -1 {
         bufreader.read_to_end(&mut buffer).await?;
     } else {
