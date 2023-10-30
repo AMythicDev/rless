@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, vec::IntoIter};
+use std::{
+    collections::BTreeMap,
+    convert::{TryFrom, TryInto},
+    path::PathBuf,
+    sync::Arc,
+    vec::IntoIter,
+};
 
 use clap::Parser;
 use minus::{MinusError, Pager};
@@ -51,18 +57,40 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
     let cl_args = cli::CommandLineInterface::parse();
 
     let mut filenames = cl_args.filename.into_iter();
+    let bufsize = cl_args.buffers.unwrap_or(64);
+    // TODO: Introduce proper error handling
+    assert!(
+        bufsize >= -1,
+        "bufsize cannot take a value less than -1, {bufsize}",
+        bufsize = bufsize,
+    );
 
     let file_list = Arc::new(Mutex::new(FileList::default()));
 
-    let mut buffer = String::with_capacity(2048);
+    // Immidiately read the first file into buffer
+    let mut buffer;
+    if bufsize == -1 {
+        // If buffer size is -1 we sent the capacity of buffer to a good amount
+        // like 1GB to show that the nuffer size is infinite while still avoiding
+        // much allocations
+        buffer = Vec::with_capacity(1024 * 1024 * 1024);
+    } else {
+        buffer = vec![0u8; <isize as TryInto<usize>>::try_into(bufsize).unwrap() * 1024];
+    }
 
     let first_filename = filenames.next().unwrap();
-    // Immidiately read the first file into buffer
     let file = File::open(&first_filename).await?;
     let mut bufreader = BufReader::new(file);
-    bufreader.read_to_string(&mut buffer).await?;
 
-    file_list.lock().await.push(first_filename, buffer);
+    if bufsize == -1 {
+        bufreader.read_to_end(&mut buffer).await?;
+    } else {
+        bufreader.read(&mut buffer).await?;
+    }
+
+    let text = String::from_utf8_lossy(&buffer).into_owned();
+
+    file_list.lock().await.push(first_filename, text);
 
     tokio::join!(start_pager(file_list.clone()), async {
         let mut job_set = read_files_in_parallel(filenames).await;
@@ -84,13 +112,13 @@ async fn read_files_in_parallel(
 
     for fnm in filenames {
         job_set.spawn(async move {
-            let mut buffer = String::with_capacity(2048);
+            let mut buffer = Vec::with_capacity(64 * 1024);
             // Immidiately read the first file into buffer
-            let file = File::open(&fnm).await?;
-            let mut bufreader = BufReader::new(file);
-            bufreader.read_to_string(&mut buffer).await?;
+            let mut file = File::open(&fnm).await?;
+            file.read_to_end(&mut buffer).await?;
+            let text = String::from_utf8_lossy(&buffer).into_owned();
 
-            Ok((fnm, buffer))
+            Ok((fnm, text))
         });
     }
     job_set
@@ -101,10 +129,10 @@ async fn start_pager(file_list: Arc<Mutex<FileList>>) -> Result<(), MinusError> 
 
     let (first_filename, first_file_data) = fl_lock.move_next().unwrap();
 
-    let input_register = minus::input::HashedEventRegister::default();
-    input_register.add_key_events(&["space"], |_, ps| {
-        // if ps.upper_mark.saturating_add(ps.rows)
-    });
+    // let input_register = minus::input::HashedEventRegister::default();
+    // input_register.add_key_events(&["space"], |_, ps| {
+    // if ps.upper_mark.saturating_add(ps.rows)
+    // });
 
     let pager = Pager::new();
     pager.set_text(first_file_data)?;

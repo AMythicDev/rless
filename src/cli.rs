@@ -7,4 +7,6 @@ use clap::Parser;
 pub struct CommandLineInterface {
     #[arg()]
     pub filename: Vec<PathBuf>,
+    #[arg(short, long)]
+    pub buffers: Option<isize>,
 }
