@@ -61,7 +61,7 @@ impl FileList {
 async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
     let cl_args = cli::CommandLineInterface::parse();
 
-    let mut filenames = cl_args.filename.into_iter();
+    let mut filenames = cl_args.filename.clone().into_iter();
     let bufsize = cl_args.buffers.unwrap_or(64);
     // TODO: Introduce proper error handling
     assert!(
@@ -101,7 +101,9 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
     file_list.lock().push(first_filename, text);
     let file_list_clone = file_list.clone();
 
-    let pager_run = tokio::task::spawn_blocking(move || start_pager(file_list_clone.clone()));
+    let pager = configure_pager(&&cl_args, file_list.clone())?;
+
+    tokio::task::spawn_blocking(move || start_pager(pager, file_list_clone.clone()));
     tokio::spawn(async move {
         let mut job_set = read_files_in_parallel(filenames).await;
 
@@ -113,6 +115,52 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
     .await?;
 
     Ok(())
+}
+
+fn configure_pager(
+    cl_args: &cli::CommandLineInterface,
+    file_list: Arc<Mutex<FileList>>,
+) -> Result<Pager, MinusError> {
+    let pager = Pager::new();
+    let mut input_register = minus::input::HashedEventRegister::default();
+    let to_jump = AtomicBool::new(false);
+    let quit_on_eof = cl_args.quit_on_eof;
+    let incsearch = cl_args.incsearch;
+
+    let fl_clone = file_list.clone();
+    let pager_clone = pager.clone();
+    input_register.add_key_events(&["space"], move |_, ps| {
+        if ps.upper_mark.saturating_add(ps.rows) >= ps.screen.formatted_lines_count() {
+            let to_jump_val = to_jump.load(std::sync::atomic::Ordering::SeqCst);
+
+            if to_jump_val {
+                to_jump.store(false, std::sync::atomic::Ordering::SeqCst);
+                let mut guard = fl_clone.lock();
+                if guard.end() {
+                    if quit_on_eof {
+                        return InputEvent::Exit;
+                    } else {
+                        return InputEvent::Ignore;
+                    }
+                }
+                let (filename, file_contents) = guard.move_next().unwrap();
+                let _ = pager_clone.set_text(file_contents);
+                let _ = pager_clone.set_prompt(filename.to_string_lossy());
+                InputEvent::Ignore
+            } else {
+                to_jump.store(true, std::sync::atomic::Ordering::SeqCst);
+                let position = ps.prefix_num.parse::<usize>().unwrap_or(1);
+                let _ = pager_clone.send_message("EOF");
+                InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position))
+            }
+        } else {
+            let position = ps.prefix_num.parse::<usize>().unwrap_or(1);
+            InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position))
+        }
+    });
+    pager.set_input_classifier(Box::new(input_register))?;
+    pager.set_incremental_search_condition(Box::new(move |_| incsearch))?;
+    Ok(pager)
 }
 
 async fn read_files_in_parallel(
@@ -134,49 +182,15 @@ async fn read_files_in_parallel(
     job_set
 }
 
-fn start_pager(file_list: Arc<Mutex<FileList>>) -> Result<(), MinusError> {
+fn start_pager(pager: Pager, file_list: Arc<Mutex<FileList>>) -> Result<(), MinusError> {
     let mut fl_lock = file_list.lock();
     let data = fl_lock.move_next().unwrap();
 
     let (first_filename, first_file_data) = (data.0.clone(), data.1.clone());
     drop(fl_lock);
 
-    let pager = Pager::new();
-    let mut input_register = minus::input::HashedEventRegister::default();
-    let to_jump = AtomicBool::new(false);
-
-    let fl_clone = file_list.clone();
-    let pager_clone = pager.clone();
-    input_register.add_key_events(&["space"], move |_, ps| {
-        if ps.upper_mark.saturating_add(ps.rows) >= ps.screen.formatted_lines_count() {
-            let to_jump_val = to_jump.load(std::sync::atomic::Ordering::SeqCst);
-
-            if to_jump_val {
-                to_jump.store(false, std::sync::atomic::Ordering::SeqCst);
-                let mut guard = fl_clone.lock();
-                if guard.end() {
-                    return InputEvent::Exit;
-                }
-                let (filename, file_contents) = guard.move_next().unwrap();
-                let _ = pager_clone.set_text(file_contents);
-                let _ = pager_clone.set_prompt(filename.to_string_lossy());
-
-                InputEvent::Ignore
-            } else {
-                to_jump.store(true, std::sync::atomic::Ordering::SeqCst);
-                let position = ps.prefix_num.parse::<usize>().unwrap_or(1);
-                let _ = pager_clone.send_message("EOF");
-                InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position))
-            }
-        } else {
-            let position = ps.prefix_num.parse::<usize>().unwrap_or(1);
-            InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position))
-        }
-    });
-
     pager.set_text(first_file_data)?;
     pager.set_prompt(first_filename.to_string_lossy())?;
-    pager.set_input_classifier(Box::new(input_register))?;
 
     minus::dynamic_paging(pager)
 }
