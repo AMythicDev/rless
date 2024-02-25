@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{linked_list::IntoIter, BTreeMap},
     convert::TryInto,
     path::PathBuf,
     sync::{atomic::AtomicBool, Arc},
@@ -17,51 +17,13 @@ use tokio::{
 
 mod cli;
 
-#[derive(Default)]
-struct FileList {
-    filenames: Vec<PathBuf>,
-    file_data: Vec<String>,
-    active: usize,
-}
-
-impl FileList {
-    fn push(&mut self, fnm: PathBuf, data: String) {
-        self.filenames.push(fnm);
-        self.file_data.push(data);
-    }
-
-    fn precheck(&self) {
-        assert_eq!(
-            self.filenames.len(),
-            self.file_data.len(),
-            "Length of filenames vector not equal to file_data vectors. This is most likely a bug.\
-            Please report to the project maintainers"
-        )
-    }
-
-    fn move_next(&mut self) -> Option<(&PathBuf, &String)> {
-        self.precheck();
-        if self.active >= self.filenames.len() {
-            return None;
-        }
-        let filename = self.filenames.get(self.active).unwrap();
-        let file_data = self.file_data.get(self.active).unwrap();
-        self.active = self.active.saturating_add(1);
-
-        Some((filename, file_data))
-    }
-
-    fn end(&self) -> bool {
-        self.precheck();
-        self.active == self.filenames.len()
-    }
-}
+type SyncedfileList = Arc<Mutex<Vec<PathBuf>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
     let cl_args = cli::CommandLineInterface::parse();
 
-    let mut filenames = cl_args.filename.clone().into_iter();
+    let mut filenames = Arc::new(Mutex::new(cl_args.filename));
     let bufsize = cl_args.buffers.unwrap_or(64);
     // TODO: Introduce proper error handling
     assert!(
@@ -69,8 +31,6 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
         "bufsize cannot take a value less than -1, {bufsize}",
         bufsize = bufsize,
     );
-
-    let file_list = Arc::new(Mutex::new(FileList::default()));
 
     // Immidiately read the first file into buffer
     let mut buffer;
@@ -98,91 +58,58 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
 
     let text = String::from_utf8_lossy(&buffer).into_owned();
 
-    file_list.lock().push(first_filename, text);
-    let file_list_clone = file_list.clone();
-
-    let pager = configure_pager(&&cl_args, file_list.clone())?;
+    let pager = configure_pager(&&cl_args, filenames)?;
 
     tokio::task::spawn_blocking(move || start_pager(pager, file_list_clone.clone()));
-    tokio::spawn(async move {
-        let mut job_set = read_files_in_parallel(filenames).await;
-
-        while let Some(Ok(Ok((fnm, data)))) = job_set.join_next().await {
-            let mut fd_lock = file_list.lock();
-            fd_lock.push(fnm, data);
-        }
-    })
-    .await?;
 
     Ok(())
 }
 
 fn configure_pager(
     cl_args: &cli::CommandLineInterface,
-    file_list: Arc<Mutex<FileList>>,
+    filenames: SyncedfileList,
 ) -> Result<Pager, MinusError> {
     let pager = Pager::new();
     let mut input_register = minus::input::HashedEventRegister::default();
     let to_jump = AtomicBool::new(false);
+    let fl_clone = filenames.clone();
+    let pager_clone = pager.clone();
+
     let quit_on_eof = cl_args.quit_on_eof;
     let incsearch = cl_args.incsearch;
 
-    let fl_clone = file_list.clone();
-    let pager_clone = pager.clone();
     input_register.add_key_events(&["space"], move |_, ps| {
         if ps.upper_mark.saturating_add(ps.rows) >= ps.screen.formatted_lines_count() {
             let to_jump_val = to_jump.load(std::sync::atomic::Ordering::SeqCst);
 
-            if to_jump_val {
-                to_jump.store(false, std::sync::atomic::Ordering::SeqCst);
-                let mut guard = fl_clone.lock();
-                if guard.end() {
-                    if quit_on_eof {
-                        return InputEvent::Exit;
-                    } else {
-                        return InputEvent::Ignore;
-                    }
-                }
-                let (filename, file_contents) = guard.move_next().unwrap();
-                let _ = pager_clone.set_text(file_contents);
-                let _ = pager_clone.set_prompt(filename.to_string_lossy());
-                InputEvent::Ignore
-            } else {
+            if !to_jump_val {
                 to_jump.store(true, std::sync::atomic::Ordering::SeqCst);
                 let position = ps.prefix_num.parse::<usize>().unwrap_or(1);
                 let _ = pager_clone.send_message("EOF");
-                InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position))
+                return InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position));
             }
+
+            to_jump.store(false, std::sync::atomic::Ordering::SeqCst);
+            let mut guard = fl_clone.lock();
+            if guard.is_empty() && quit_on_eof {
+                return InputEvent::Exit;
+            } else {
+                return InputEvent::Ignore;
+            }
+            move_to_next_file(filenames, &pager);
+            InputEvent::Ignore
         } else {
             let position = ps.prefix_num.parse::<usize>().unwrap_or(1);
             InputEvent::UpdateUpperMark(ps.upper_mark.saturating_add(position))
         }
     });
+
     pager.set_input_classifier(Box::new(input_register))?;
     pager.set_incremental_search_condition(Box::new(move |_| incsearch))?;
     Ok(pager)
 }
 
-async fn read_files_in_parallel(
-    filenames: IntoIter<PathBuf>,
-) -> JoinSet<Result<(PathBuf, String), std::io::Error>> {
-    let mut job_set = JoinSet::new();
-
-    for fnm in filenames {
-        job_set.spawn(async move {
-            let mut buffer = Vec::with_capacity(64 * 1024);
-            // Immidiately read the first file into buffer
-            let mut file = File::open(&fnm).await?;
-            file.read_to_end(&mut buffer).await?;
-            let text = String::from_utf8_lossy(&buffer).into_owned();
-
-            Ok((fnm, text))
-        });
-    }
-    job_set
-}
-
-fn start_pager(pager: Pager, file_list: Arc<Mutex<FileList>>) -> Result<(), MinusError> {
+fn start_pager(pager: Pager, file_list: SyncedfileList) -> Result<(), MinusError> {
     let mut fl_lock = file_list.lock();
     let data = fl_lock.move_next().unwrap();
 
@@ -195,17 +122,17 @@ fn start_pager(pager: Pager, file_list: Arc<Mutex<FileList>>) -> Result<(), Minu
     minus::dynamic_paging(pager)
 }
 
-// async fn move_to_next_file(
-//     file_list: Arc<Mutex<FileList>>,
-//     pager: &minus::Pager,
-// ) -> Result<(), MinusError> {
-//     let mut fl_lock = file_list.lock().await;
-//
-//     let (filename, file_data) = fl_lock.move_next().unwrap();
-//
-//     let pager = Pager::new();
-//     pager.set_text(file_data)?;
-//     pager.set_prompt(filename.to_string_lossy())?;
-//     drop(fl_lock);
-//     Ok(())
-// }
+async fn move_to_next_file(
+    file_list: SyncedfileList,
+    pager: &minus::Pager,
+) -> Result<(), MinusError> {
+    let mut fl_lock = file_list.lock().await;
+
+    let (filename, file_data) = fl_lock.move_next().unwrap();
+
+    let pager = Pager::new();
+    pager.set_text(file_data)?;
+    pager.set_prompt(filename.to_string_lossy())?;
+    drop(fl_lock);
+    Ok(())
+}
