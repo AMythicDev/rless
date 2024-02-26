@@ -6,7 +6,7 @@ use clap::Parser;
 #[command(author, version, about)]
 pub struct CommandLineInterface {
     #[arg()]
-    pub filename: Vec<PathBuf>,
+    pub filenames: Vec<PathBuf>,
     #[arg(short, long)]
     pub buffers: Option<isize>,
     /// Automatically quit when all files have been done viewing. By default you can quit only

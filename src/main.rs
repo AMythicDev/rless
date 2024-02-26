@@ -1,11 +1,11 @@
 use std::{
-    collections::{linked_list::IntoIter, BTreeMap},
+    collections::BTreeMap,
     convert::TryInto,
     path::PathBuf,
     sync::{atomic::AtomicBool, Arc},
-    vec::IntoIter,
 };
 
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use minus::{input::InputEvent, MinusError, Pager};
 use parking_lot::Mutex;
@@ -20,16 +20,21 @@ mod cli;
 type SyncedfileList = Arc<Mutex<Vec<PathBuf>>>;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
+async fn main() -> Result<()> {
     let cl_args = cli::CommandLineInterface::parse();
+    let filenames = cl_args.filenames.clone();
 
-    let mut filenames = Arc::new(Mutex::new(cl_args.filename));
+    anyhow::ensure!(
+        !filenames.is_empty(),
+        "Missing filename. Run 'rless --help' to see usage."
+    );
+
+    let mut filenames = Arc::new(Mutex::new(filenames));
     let bufsize = cl_args.buffers.unwrap_or(64);
     // TODO: Introduce proper error handling
-    assert!(
+    anyhow::ensure!(
         bufsize >= -1,
-        "bufsize cannot take a value less than -1, {bufsize}",
-        bufsize = bufsize,
+        "bufsize cannot take a value less than -1, provided: '{bufsize}'",
     );
 
     // Immidiately read the first file into buffer
@@ -43,7 +48,7 @@ async fn main() -> Result<(), Box<(dyn std::error::Error + 'static)>> {
         buffer = vec![0u8; <isize as TryInto<usize>>::try_into(bufsize).unwrap() * 1024];
     }
 
-    let first_filename = filenames.next().unwrap();
+    let first_filename = filenames.lock().pop().unwrap();
     let file = File::open(&first_filename).await?;
     let mut bufreader = BufReader::new(file);
 
